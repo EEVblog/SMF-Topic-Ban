@@ -1,0 +1,292 @@
+<?xml version="1.0"?>
+<!DOCTYPE modification SYSTEM "http://www.simplemachines.org/xml/modification">
+<modification xmlns="http://www.simplemachines.org/xml/modification" xmlns:smf="http://www.simplemachines.org/">
+	<id>doug_heffernan:TopicBan</id>
+	<name>Topic Ban</name>
+	<version>1.0</version>
+	<file name="$sourcedir/Post.php">
+		<operation>
+			<search position="before"><![CDATA[// Sneaking off, are we?
+	if (empty($_POST) && empty($topic))
+		redirectexit('action=post;board=' . $board . '.0');
+	elseif (empty($_POST) && !empty($topic))
+		redirectexit('action=post;topic=' . $topic . '.0');
+
+	// No need!
+	$context['robot_no_index'] = true;]]></search>
+			<add><![CDATA[
+	//List current banned users from this topic.
+	$banCheck = $smcFunc['db_query']('', '
+		      SELECT id_banned_member
+		      FROM {db_prefix}log_topic_bans
+		      WHERE id_banned_member = {int:banned_member}
+		      AND topic_id  = {int:current_topic}
+			  ',
+		      array(
+			        'banned_member' => $user_info['id'],
+					'current_topic' => $topic,
+		           )
+	);
+	
+	list ($banned) = $smcFunc['db_fetch_row']($banCheck);
+	$smcFunc['db_free_result']($banCheck);
+	
+	if (!empty($banned) && !$user_info['is_admin'])	
+	{	
+         fatal_lang_error('topic_post_error_message', false);
+	}]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/Display.php">
+		<operation>
+			<search position="before"><![CDATA[// What are you gonna display if these are empty?!
+	if (empty($topic))
+		fatal_lang_error('no_board', false);]]></search>
+			<add><![CDATA[
+	 //List current banned users from this topic.
+	 $banCheck = $smcFunc['db_query']('', '
+		      SELECT id_banned_member
+		      FROM {db_prefix}log_topic_bans
+		      WHERE id_banned_member = {int:banned_member}
+		      AND topic_id  = {int:current_topic}
+			  ',
+		      array(
+			        'banned_member' => $user_info['id'],
+					'current_topic' => $topic,
+		           )
+	);
+	
+	list ($banned) = $smcFunc['db_fetch_row']($banCheck);
+	$smcFunc['db_free_result']($banCheck);
+		
+    $context['bannedUsers'] = $banned;
+	
+	//Ban from viewing the topic is setting is enabled.
+	if (!empty($modSettings['enable_complete_topic_ban']))
+	{
+        if (!empty($context['bannedUsers']) && !$user_info['is_admin'])
+		{
+	       fatal_lang_error('complete_topic_ban_error', false);
+		}
+	}]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/Recent.php">
+		<operation>
+			<search position="replace"><![CDATA[// Get all the most recent posts.
+	$request = $smcFunc['db_query']('', '
+		SELECT
+			m.id_msg, m.subject, m.smileys_enabled, m.poster_time, m.body, m.id_topic, t.id_board, b.id_cat,
+			b.name AS bname, c.name AS cname, t.num_replies, m.id_member, m2.id_member AS id_first_member,
+			IFNULL(mem2.real_name, m2.poster_name) AS first_poster_name, t.id_first_msg,
+			IFNULL(mem.real_name, m.poster_name) AS poster_name, t.id_last_msg
+		FROM {db_prefix}messages AS m
+			INNER JOIN {db_prefix}topics AS t ON (t.id_topic = m.id_topic)
+			INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
+			INNER JOIN {db_prefix}categories AS c ON (c.id_cat = b.id_cat)
+			INNER JOIN {db_prefix}messages AS m2 ON (m2.id_msg = t.id_first_msg)
+			LEFT JOIN {db_prefix}members AS mem ON (mem.id_member = m.id_member)
+			LEFT JOIN {db_prefix}members AS mem2 ON (mem2.id_member = m2.id_member)
+		WHERE m.id_msg IN ({array_int:message_list})
+		ORDER BY m.id_msg DESC
+		LIMIT ' . count($messages),
+		array(
+			'message_list' => $messages,
+		)
+	);]]></search>
+			<add><![CDATA[// Get all the most recent posts.
+	$request = $smcFunc['db_query']('', '
+		SELECT
+			m.id_msg, m.subject, m.smileys_enabled, m.poster_time, m.body, m.id_topic, t.id_board, b.id_cat, bl.id_banned_member,
+			b.name AS bname, c.name AS cname, t.num_replies, m.id_member, m2.id_member AS id_first_member,
+			IFNULL(mem2.real_name, m2.poster_name) AS first_poster_name, t.id_first_msg,
+			IFNULL(mem.real_name, m.poster_name) AS poster_name, t.id_last_msg
+		FROM {db_prefix}messages AS m
+			INNER JOIN {db_prefix}topics AS t ON (t.id_topic = m.id_topic)
+			INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
+			INNER JOIN {db_prefix}categories AS c ON (c.id_cat = b.id_cat)
+			INNER JOIN {db_prefix}messages AS m2 ON (m2.id_msg = t.id_first_msg)
+			LEFT JOIN {db_prefix}log_topic_bans AS bl ON (bl.topic_id = t.id_topic)
+			LEFT JOIN {db_prefix}members AS mem ON (mem.id_member = m.id_member)
+			LEFT JOIN {db_prefix}members AS mem2 ON (mem2.id_member = m2.id_member)
+		WHERE m.id_msg IN ({array_int:message_list})
+		ORDER BY m.id_msg DESC
+		LIMIT ' . count($messages),
+		array(
+			'message_list' => $messages,
+		)
+	);]]></add>
+		</operation>
+		<operation>
+			<search position="before"><![CDATA[// BBC-atize the message.
+		$row['body'] = parse_bbc($row['body'], $row['smileys_enabled'], $row['id_msg']);]]></search>
+			<add><![CDATA[
+	
+			//Prevent banned users from viewing the posts in topics that they have been banned from.
+			if (!empty($modSettings['enable_complete_topic_ban']))
+			{ 
+		         if ($row['id_banned_member'] == $user_info['id'] && !$user_info['is_admin'])
+	             {	
+           	         $row['body'] = $txt['topic_view_ban_message'];
+	             }
+            }]]></add>
+		</operation>
+	</file>
+	<file name="$sourcedir/Profile-View.php">
+		<operation>
+			<search position="replace"><![CDATA[if ($context['is_topics'])
+		{
+			$request = $smcFunc['db_query']('', '
+				SELECT
+					b.id_board, b.name AS bname, c.id_cat, c.name AS cname, t.id_member_started, t.id_first_msg, t.id_last_msg,
+					t.approved, m.body, m.smileys_enabled, m.subject, m.poster_time, m.id_topic, m.id_msg
+				FROM {db_prefix}topics AS t
+					INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
+					LEFT JOIN {db_prefix}categories AS c ON (c.id_cat = b.id_cat)
+					INNER JOIN {db_prefix}messages AS m ON (m.id_msg = t.id_first_msg)
+				WHERE t.id_member_started = {int:current_member}' . (!empty($board) ? '
+					AND t.id_board = {int:board}' : '') . (empty($range_limit) ? '' : '
+					AND ' . $range_limit) . '
+					AND {query_see_board}' . (!$modSettings['postmod_active'] || $context['user']['is_owner'] ? '' : '
+					AND t.approved = {int:is_approved} AND m.approved = {int:is_approved}') . '
+				ORDER BY t.id_first_msg ' . ($reverse ? 'ASC' : 'DESC') . '
+				LIMIT ' . $start . ', ' . $maxIndex,
+				array(
+					'current_member' => $memID,
+					'is_approved' => 1,
+					'board' => $board,
+				)
+			);
+		}
+		else
+		{
+			$request = $smcFunc['db_query']('', '
+				SELECT
+					b.id_board, b.name AS bname, c.id_cat, c.name AS cname, m.id_topic, m.id_msg,
+					t.id_member_started, t.id_first_msg, t.id_last_msg, m.body, m.smileys_enabled,
+					m.subject, m.poster_time, m.approved
+				FROM {db_prefix}messages AS m
+					INNER JOIN {db_prefix}topics AS t ON (t.id_topic = m.id_topic)
+					INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
+					LEFT JOIN {db_prefix}categories AS c ON (c.id_cat = b.id_cat)
+				WHERE m.id_member = {int:current_member}' . (!empty($board) ? '
+					AND b.id_board = {int:board}' : '') . (empty($range_limit) ? '' : '
+					AND ' . $range_limit) . '
+					AND {query_see_board}' . (!$modSettings['postmod_active'] || $context['user']['is_owner'] ? '' : '
+					AND t.approved = {int:is_approved} AND m.approved = {int:is_approved}') . '
+				ORDER BY m.id_msg ' . ($reverse ? 'ASC' : 'DESC') . '
+				LIMIT ' . $start . ', ' . $maxIndex,
+				array(
+					'current_member' => $memID,
+					'is_approved' => 1,
+					'board' => $board,
+				)
+			);
+		}]]></search>
+			<add><![CDATA[if ($context['is_topics'])
+		{
+			$request = $smcFunc['db_query']('', '
+				SELECT
+					b.id_board, b.name AS bname, c.id_cat, c.name AS cname, t.id_member_started, t.id_first_msg, t.id_last_msg,
+					t.approved, bl.id_banned_member, m.body, m.smileys_enabled, m.subject, m.poster_time, m.id_topic, m.id_msg
+				FROM {db_prefix}topics AS t
+					INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
+					LEFT JOIN {db_prefix}categories AS c ON (c.id_cat = b.id_cat)
+					INNER JOIN {db_prefix}messages AS m ON (m.id_msg = t.id_first_msg)
+					LEFT JOIN {db_prefix}log_topic_bans AS bl ON (bl.topic_id = t.id_topic)
+				WHERE t.id_member_started = {int:current_member}' . (!empty($board) ? '
+					AND t.id_board = {int:board}' : '') . (empty($range_limit) ? '' : '
+					AND ' . $range_limit) . '
+					AND {query_see_board}' . (!$modSettings['postmod_active'] || $context['user']['is_owner'] ? '' : '
+					AND t.approved = {int:is_approved} AND m.approved = {int:is_approved}') . '
+				ORDER BY t.id_first_msg ' . ($reverse ? 'ASC' : 'DESC') . '
+				LIMIT ' . $start . ', ' . $maxIndex,
+				array(
+					'current_member' => $memID,
+					'is_approved' => 1,
+					'board' => $board,
+				)
+			);
+		}
+		else
+		{
+			$request = $smcFunc['db_query']('', '
+				SELECT
+					b.id_board, b.name AS bname, c.id_cat, c.name AS cname, m.id_topic, m.id_msg,
+					t.id_member_started, t.id_first_msg, t.id_last_msg, bl.id_banned_member, m.body, m.smileys_enabled,
+					m.subject, m.poster_time, m.approved
+				FROM {db_prefix}messages AS m
+					INNER JOIN {db_prefix}topics AS t ON (t.id_topic = m.id_topic)
+					INNER JOIN {db_prefix}boards AS b ON (b.id_board = t.id_board)
+					LEFT JOIN {db_prefix}categories AS c ON (c.id_cat = b.id_cat)
+					LEFT JOIN {db_prefix}log_topic_bans AS bl ON (bl.topic_id = t.id_topic)
+				WHERE m.id_member = {int:current_member}' . (!empty($board) ? '
+					AND b.id_board = {int:board}' : '') . (empty($range_limit) ? '' : '
+					AND ' . $range_limit) . '
+					AND {query_see_board}' . (!$modSettings['postmod_active'] || $context['user']['is_owner'] ? '' : '
+					AND t.approved = {int:is_approved} AND m.approved = {int:is_approved}') . '
+				ORDER BY m.id_msg ' . ($reverse ? 'ASC' : 'DESC') . '
+				LIMIT ' . $start . ', ' . $maxIndex,
+				array(
+					'current_member' => $memID,
+					'is_approved' => 1,
+					'board' => $board,
+				)
+			);
+		}]]></add>
+		</operation>
+		<operation>
+			<search position="before"><![CDATA[// Do the code.
+		$row['body'] = parse_bbc($row['body'], $row['smileys_enabled'], $row['id_msg']);]]></search>
+			<add><![CDATA[
+	
+			//Prevent banned users from viewing the posts in topics that they have been banned from.
+			if (!empty($modSettings['enable_complete_topic_ban']))
+			{
+				 if ($row['id_banned_member'] == $user_info['id'] && !$user_info['is_admin'])
+	             {	
+           	         $row['body'] = $txt['topic_view_ban_message'];
+	             }
+            }]]></add>
+		</operation>
+	</file>
+    <file name="$themedir/Display.template.php">
+	<operation>
+			<search position="after"><![CDATA[call_integration_hook('integrate_display_buttons', array(&$normal_buttons));]]></search>
+			<add><![CDATA[
+			
+	   if ($context['bannedUsers'] && !$context['user']['is_admin'])	
+	   {	
+           //Hide the reply and quote buttons in this topic for banned users.	   
+	       $context['can_reply'] = false;
+		   $context['can_quote'] = false;
+       }]]></add>
+		</operation>
+		<operation>
+			<search position="after"><![CDATA[if ($context['can_reply'] && !empty($options['display_quick_reply']))]]></search>
+			<add><![CDATA[
+	   if ($context['bannedUsers'] && !$context['user']['is_admin'])	
+	   {
+          //Hide the quick reply this topic for banned users.	   
+	      $options['display_quick_reply'] = '';
+       }]]></add>
+		</operation>
+		
+		<operation>
+			<search position="after"><![CDATA[// Show the topic information - icon, subject, etc.]]></search>
+			<add><![CDATA[//Show a notice to banned members.
+	   $modSettings['topic_ban_message_text'] = str_replace( "{user}", $context['user']['username'], $modSettings['topic_ban_message_text']);
+
+       if (!empty($modSettings['enable_topic_ban_message']) && !empty($context['bannedUsers']))
+       {	   
+	       if ($context['bannedUsers'] && !$context['user']['is_admin'])
+	       {
+		      echo'
+                   <div class="errorbox">
+			           ', parse_bbc($modSettings['topic_ban_message_text']), ' <br />
+		           </div>';
+		   }   
+       }]]></add>
+		</operation>	
+	</file>
+</modification>

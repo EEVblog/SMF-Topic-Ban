@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!DOCTYPE package-info SYSTEM "http://www.simplemachines.org/xml/package-info">
+<package-info xmlns="http://www.simplemachines.org/xml/package-info" xmlns:smf="http://www.simplemachines.org/">
+	<id>doug_heffernan:TopicBan</id>
+	<name>Topic Ban</name>
+	<version>1.0</version>
+	<type>modification</type>
+	<install for="2.0-2.99.99">
+		<readme type="file" parsebbc="true">readme.txt</readme>
+		<modification>TopicBan.xml</modification>
+		<require-dir name="Sources" destination="$boarddir"/>
+        <require-dir name="Themes" destination="$boarddir"/>
+		<require-dir name="Themes/default/languages" destination="$themedir" />
+		<code>TopicBanHooks.php</code>
+		<database type="file">Install.php</database>
+		<redirect url="?action=admin;area=topicbans;sa=members" timeout="1000" />
+	</install>
+	<uninstall for="2.0-2.99.99">
+	    <modification reverse="true">TopicBan.xml</modification>
+	    <remove-file name="$sourcedir/Subs-TopicBan.php" />
+		<remove-file name="$sourcedir/BannedTopicUsersAdmin.php" />
+		<remove-file name="$themedir/TopicBan.template.php" />
+		<remove-file name="$languagedir/TopicBan.english.php" />
+		<remove-file name="$languagedir/TopicBan.english-utf8.php" />
+		<code>TopicBanHooks.php</code>
+		<redirect url="?action=admin;area=packages;sa=browse" timeout="1000" />
+	</uninstall>
+
+</package-info>
